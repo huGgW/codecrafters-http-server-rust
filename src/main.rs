@@ -1,7 +1,13 @@
+mod request;
+mod response;
+
+use request::Request;
+use response::{Response, Status};
+use std::collections::HashMap;
 use std::io;
 use std::net::TcpListener;
 use std::{
-    io::{BufRead, BufReader, Write},
+    io::{BufReader, Write},
     net::TcpStream,
 };
 
@@ -35,87 +41,117 @@ fn main() {
 fn handle_connection(stream: &mut TcpStream) -> Result<(), std::io::Error> {
     let read_stream = stream.try_clone()?;
     let mut reader = BufReader::new(read_stream);
+    let request = Request::parse(&mut reader)?;
 
-    let req_line = read_request(&mut reader)?;
-    let handler = router(&req_line);
+    let handler = router(&request);
 
-    handler(&req_line, stream)
+    handler(&request, stream)
 }
 
-fn read_request(reader: &mut BufReader<TcpStream>) -> Result<String, std::io::Error> {
-    let mut buf = Vec::new();
-    reader.read_until(b'\n', &mut buf)?;
-    if buf.get(buf.len() - 2).filter(|&s| *s == b'\r').is_none() {
-        return Err(std::io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "not valid line seperator",
-        ));
-    }
-
-    match String::from_utf8(buf) {
-        Ok(s) => Ok(s),
-        Err(e) => Err(std::io::Error::new(io::ErrorKind::InvalidData, e)),
-    }
-}
-
-fn router(req_line: &str) -> fn(&str, &mut TcpStream) -> Result<(), std::io::Error> {
-    let req_line_args = req_line.split(' ').collect::<Vec<_>>();
-
+fn router(request: &Request) -> fn(&Request, &mut TcpStream) -> Result<(), std::io::Error> {
     // if not GET, 404
-    if req_line_args.first().filter(|&&s| s == "GET").is_none() {
+    if request.start_line.method != "GET" {
         return unknwon_handler;
     }
 
-    // if not HTTP, 404
-    if req_line_args
-        .last()
-        .filter(|&s| s.starts_with("HTTP"))
-        .is_none()
-    {
-        return unknwon_handler;
-    }
-
-    match req_line_args.get(1) {
-        Some(&"/") => default_handler,
-        Some(&s) if s.starts_with("/echo") => echo_handler,
+    match request.start_line.path.as_str() {
+        "/" => default_handler,
+        s if s.starts_with("/echo") => echo_handler,
+        u if u.starts_with("/user-agent") => user_agent_handler,
         _ => unknwon_handler,
     }
 }
 
-fn echo_handler(req_line: &str, stream: &mut TcpStream) -> Result<(), std::io::Error> {
-    let req_line_args = req_line.split(' ').collect::<Vec<_>>();
-    let path = req_line_args.get(1).unwrap(); // should be already checked
-    let echo_paths = path.split('/').skip(2).collect::<Vec<_>>();
+fn echo_handler(request: &Request, stream: &mut TcpStream) -> Result<(), std::io::Error> {
+    let echo_paths = request
+        .start_line
+        .path
+        .split('/')
+        .skip(2)
+        .collect::<Vec<_>>();
 
     // we care only first element
-
-    let echo_str = match echo_paths.first() {
-        Some(&s) => s,
-        None => {
+    let echo_str = match echo_paths[..] {
+        [s] => s,
+        _ => {
             return Err(std::io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "no str given to echo",
+                io::ErrorKind::InvalidData,
+                "not valid echo path given",
             ))
         }
     };
 
-    stream.write_all(b"HTTP/1.1 200 OK\r\n")?;
-    stream.write_all(b"Content-Type: text/plain\r\n")?;
-    stream.write_all(format!("Content-Length: {}\r\n", echo_str.len()).as_bytes())?;
-    stream.write_all(b"\r\n")?;
-    stream.write_all(echo_str.as_bytes())?;
+    let response = Response {
+        status: Status {
+            version: "1.1".to_string(),
+            status_code: 200,
+            status: "OK".to_string(),
+        },
+        headers: HashMap::from([
+            (String::from("Content-Type"), String::from("text/plain")),
+            (String::from("Content-Length"), echo_str.len().to_string()),
+        ]),
+        body: echo_str.as_bytes().to_vec(),
+    };
+    stream.write_all(&response.to_bytes())?;
 
     Ok(())
 }
 
-fn default_handler(_: &str, stream: &mut TcpStream) -> Result<(), std::io::Error> {
-    stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n")?;
+fn user_agent_handler(request: &Request, stream: &mut TcpStream) -> Result<(), std::io::Error> {
+    let user_agent = match request.headers.get("User-Agent".to_lowercase().as_str()) {
+        Some(s) => s,
+        None => {
+            return Err(std::io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "not valid user agent header given",
+            ))
+        }
+    };
+
+    let response = Response {
+        status: Status {
+            version: "1.1".to_string(),
+            status_code: 200,
+            status: "OK".to_string(),
+        },
+        headers: HashMap::from([
+            (String::from("Content-Type"), String::from("text/plain")),
+            (String::from("Content-Length"), user_agent.len().to_string()),
+        ]),
+        body: user_agent.as_bytes().to_vec(),
+    };
+    stream.write_all(&response.to_bytes())?;
 
     Ok(())
 }
 
-fn unknwon_handler(_: &str, stream: &mut TcpStream) -> Result<(), std::io::Error> {
-    stream.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n")?;
+fn default_handler(_: &Request, stream: &mut TcpStream) -> Result<(), std::io::Error> {
+    let response = Response {
+        status: Status {
+            version: "1.1".to_string(),
+            status_code: 200,
+            status: "OK".to_string(),
+        },
+        headers: HashMap::new(),
+        body: Vec::new(),
+    };
+    stream.write_all(&response.to_bytes())?;
+
+    Ok(())
+}
+
+fn unknwon_handler(_: &Request, stream: &mut TcpStream) -> Result<(), std::io::Error> {
+    let response = Response {
+        status: Status {
+            version: "1.1".to_string(),
+            status_code: 404,
+            status: "Not Found".to_string(),
+        },
+        headers: HashMap::new(),
+        body: Vec::new(),
+    };
+    stream.write_all(&response.to_bytes())?;
 
     Ok(())
 }
