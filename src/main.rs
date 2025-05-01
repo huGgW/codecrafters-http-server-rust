@@ -4,8 +4,8 @@ mod response;
 use request::Request;
 use response::{Response, Status};
 use std::collections::HashMap;
-use std::io;
 use std::net::TcpListener;
+use std::{io, thread};
 use std::{
     io::{BufReader, Write},
     net::TcpStream,
@@ -16,9 +16,10 @@ fn main() {
     println!("Logs from your program will appear here!");
 
     let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
+    let mut thread_handles = Vec::new();
 
     for stream in listener.incoming() {
-        match stream {
+        let handle = thread::spawn(move || match stream {
             Ok(mut stream) => {
                 println!("accepted new connection");
 
@@ -26,15 +27,17 @@ fn main() {
                     println!("handle connection error: {}", e);
                 }
 
-                if let Err(e) = stream.shutdown(std::net::Shutdown::Both) {
-                    println!("shutdown error: {}", e);
-                }
                 println!("connection closed");
             }
             Err(e) => {
                 println!("error: {}", e);
             }
-        }
+        });
+        thread_handles.push(handle);
+    }
+
+    for handle in thread_handles {
+        handle.join().unwrap();
     }
 }
 
