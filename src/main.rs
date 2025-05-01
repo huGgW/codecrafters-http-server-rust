@@ -47,11 +47,13 @@ fn handle_connection(stream: &mut TcpStream) -> Result<(), std::io::Error> {
     let request = Request::parse(&mut reader)?;
 
     let handler = router(&request);
+    let response = handler(&request).unwrap_or_else(|_| unknwon_handler(&request).unwrap());
 
-    handler(&request, stream)
+    stream.write_all(&response.to_bytes())?;
+    Ok(())
 }
 
-fn router(request: &Request) -> fn(&Request, &mut TcpStream) -> Result<(), std::io::Error> {
+fn router(request: &Request) -> fn(&Request) -> Result<Response, std::io::Error> {
     // if not GET, 404
     if request.start_line.method != "GET" {
         return unknwon_handler;
@@ -65,7 +67,7 @@ fn router(request: &Request) -> fn(&Request, &mut TcpStream) -> Result<(), std::
     }
 }
 
-fn echo_handler(request: &Request, stream: &mut TcpStream) -> Result<(), std::io::Error> {
+fn echo_handler(request: &Request) -> Result<Response, std::io::Error> {
     let echo_paths = request
         .start_line
         .path
@@ -84,7 +86,7 @@ fn echo_handler(request: &Request, stream: &mut TcpStream) -> Result<(), std::io
         }
     };
 
-    let response = Response {
+    Ok(Response {
         status: Status {
             version: "1.1".to_string(),
             status_code: 200,
@@ -95,13 +97,10 @@ fn echo_handler(request: &Request, stream: &mut TcpStream) -> Result<(), std::io
             (String::from("Content-Length"), echo_str.len().to_string()),
         ]),
         body: echo_str.as_bytes().to_vec(),
-    };
-    stream.write_all(&response.to_bytes())?;
-
-    Ok(())
+    })
 }
 
-fn user_agent_handler(request: &Request, stream: &mut TcpStream) -> Result<(), std::io::Error> {
+fn user_agent_handler(request: &Request) -> Result<Response, std::io::Error> {
     let user_agent = match request.headers.get("User-Agent".to_lowercase().as_str()) {
         Some(s) => s,
         None => {
@@ -112,7 +111,7 @@ fn user_agent_handler(request: &Request, stream: &mut TcpStream) -> Result<(), s
         }
     };
 
-    let response = Response {
+    Ok(Response {
         status: Status {
             version: "1.1".to_string(),
             status_code: 200,
@@ -123,14 +122,11 @@ fn user_agent_handler(request: &Request, stream: &mut TcpStream) -> Result<(), s
             (String::from("Content-Length"), user_agent.len().to_string()),
         ]),
         body: user_agent.as_bytes().to_vec(),
-    };
-    stream.write_all(&response.to_bytes())?;
-
-    Ok(())
+    })
 }
 
-fn default_handler(_: &Request, stream: &mut TcpStream) -> Result<(), std::io::Error> {
-    let response = Response {
+fn default_handler(_: &Request) -> Result<Response, std::io::Error> {
+    Ok(Response {
         status: Status {
             version: "1.1".to_string(),
             status_code: 200,
@@ -138,14 +134,11 @@ fn default_handler(_: &Request, stream: &mut TcpStream) -> Result<(), std::io::E
         },
         headers: HashMap::new(),
         body: Vec::new(),
-    };
-    stream.write_all(&response.to_bytes())?;
-
-    Ok(())
+    })
 }
 
-fn unknwon_handler(_: &Request, stream: &mut TcpStream) -> Result<(), std::io::Error> {
-    let response = Response {
+fn unknwon_handler(_: &Request) -> Result<Response, std::io::Error> {
+    Ok(Response {
         status: Status {
             version: "1.1".to_string(),
             status_code: 404,
@@ -153,8 +146,5 @@ fn unknwon_handler(_: &Request, stream: &mut TcpStream) -> Result<(), std::io::E
         },
         headers: HashMap::new(),
         body: Vec::new(),
-    };
-    stream.write_all(&response.to_bytes())?;
-
-    Ok(())
+    })
 }
