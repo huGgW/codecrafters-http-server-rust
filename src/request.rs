@@ -1,4 +1,7 @@
-use std::{collections::HashMap, io::{self, BufRead, BufReader}};
+use std::{
+    collections::HashMap,
+    io::{self, BufRead, BufReader, Read},
+};
 
 pub struct Request {
     pub start_line: StartLine,
@@ -30,11 +33,25 @@ impl Request {
             }
         }
 
-        // TODO: implement reading body
+        // we only read body if content-length header is given
+        let body = if let Some(content_length_val) = headers.get("content-length") {
+            let content_length = match content_length_val.parse::<usize>() {
+                Ok(n) => n,
+                Err(e) => {
+                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e));
+                }
+            };
+            let mut body = vec![0; content_length];
+            reader.read_exact(&mut body)?;
+            body
+        } else {
+            Vec::new()
+        };
+
         Ok(Request {
             start_line,
             headers,
-            body: Vec::new(),
+            body,
         })
     }
 
