@@ -57,12 +57,10 @@ pub fn echo_handler(request: &Request) -> Result<Response, std::io::Error> {
             status_code: 200,
             status: "OK".to_string(),
         },
-        headers: HashMap::from([
-            (String::from("Content-Type"), String::from("text/plain")),
-            (String::from("Content-Length"), echo_str.len().to_string()),
-        ]),
-        body: echo_str.as_bytes().to_vec(),
-    })
+        headers: HashMap::new(),
+        body: Vec::new(),
+    }
+    .with_body("text/plain", echo_str.as_bytes().to_vec()))
 }
 
 pub fn user_agent_handler(request: &Request) -> Result<Response, std::io::Error> {
@@ -82,12 +80,10 @@ pub fn user_agent_handler(request: &Request) -> Result<Response, std::io::Error>
             status_code: 200,
             status: "OK".to_string(),
         },
-        headers: HashMap::from([
-            (String::from("Content-Type"), String::from("text/plain")),
-            (String::from("Content-Length"), user_agent.len().to_string()),
-        ]),
-        body: user_agent.as_bytes().to_vec(),
-    })
+        headers: HashMap::new(),
+        body: Vec::new(),
+    }
+    .with_body("text/plain", user_agent.as_bytes().to_vec()))
 }
 
 pub fn files_read_handler_provider(
@@ -124,15 +120,10 @@ pub fn files_read_handler_provider(
                 status_code: 200,
                 status: String::from("OK"),
             },
-            headers: HashMap::from([
-                (
-                    String::from("Content-Type"),
-                    String::from("application/octet-stream"),
-                ),
-                (String::from("Content-Length"), file.len().to_string()),
-            ]),
-            body: file,
-        })
+            headers: HashMap::new(),
+            body: Vec::new(),
+        }
+        .with_body("application/octet-stream", file))
     }
 }
 
