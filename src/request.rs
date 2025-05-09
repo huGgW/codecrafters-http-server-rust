@@ -58,7 +58,8 @@ impl Request {
     fn read_line<R: io::Read>(reader: &mut BufReader<R>) -> Result<String, std::io::Error> {
         let mut buf = Vec::new();
         reader.read_until(b'\n', &mut buf)?;
-        if buf.get(buf.len() - 2).filter(|&s| *s == b'\r').is_none()
+        if buf.len() < 2
+            || buf.get(buf.len() - 2).filter(|&s| *s == b'\r').is_none()
             || buf.last().filter(|&s| *s == b'\n').is_none()
         {
             return Err(std::io::Error::new(

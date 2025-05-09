@@ -56,13 +56,24 @@ fn main() {
 fn handle_connection(stream: &mut TcpStream, args: &Args) -> Result<(), std::io::Error> {
     let read_stream = stream.try_clone()?;
     let mut reader = BufReader::new(read_stream);
-    let request = Request::parse(&mut reader)?;
 
-    let handler = router(&request, args);
-    let wrapped_handler = apply_middleware(handler);
-    let response = wrapped_handler(&request).unwrap_or_else(|_| unknwon_handler(&request).unwrap());
+    let mut should_close = false;
+    while !should_close {
+        let request = Request::parse(&mut reader)?;
 
-    stream.write_all(&response.to_bytes())?;
+        let handler = router(&request, args);
+        let wrapped_handler = apply_middleware(handler);
+
+        let response =
+            wrapped_handler(&request).unwrap_or_else(|_| unknwon_handler(&request).unwrap());
+        stream.write_all(&response.to_bytes())?;
+
+        should_close = request
+            .headers
+            .get("Connection".to_lowercase().as_str())
+            .map_or(false, |s| s == "close")
+    }
+
     Ok(())
 }
 
