@@ -64,14 +64,21 @@ fn handle_connection(stream: &mut TcpStream, args: &Args) -> Result<(), std::io:
         let handler = router(&request, args);
         let wrapped_handler = apply_middleware(handler);
 
-        let response =
+        let mut response =
             wrapped_handler(&request).unwrap_or_else(|_| unknwon_handler(&request).unwrap());
-        stream.write_all(&response.to_bytes())?;
 
         should_close = request
             .headers
             .get("Connection".to_lowercase().as_str())
-            .map_or(false, |s| s == "close")
+            .map_or(false, |s| s == "close");
+
+        if should_close {
+            (&mut response)
+                .headers
+                .insert(String::from("Connection"), String::from("close"));
+        }
+
+        stream.write_all(&response.to_bytes())?;
     }
 
     Ok(())
